@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Chronos Sync Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Outfit:wght@600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #1a73e8; --bg: #f8f9fa; --card: #ffffff;
+            --text: #202124; --text-sub: #5f6368;
+            --input-bg: #f1f3f4; --shadow: 0 4px 20px rgba(0,0,0,0.08);
+            --danger: #ea4335; --accent: #34a853; 
+            --nav-bg: #1e293b; --tab-inactive: #94a3b8; --tab-active: #eab308;
+        }
+        body.dark-mode {
+            --bg: #0f172a; --card: #1e293b; --text: #f8fafc;
+            --text-sub: #94a3b8; --input-bg: #334155;
+            --shadow: 0 10px 30px rgba(0,0,0,0.3); --nav-bg: #0f172a;
+        }
+        body {
+            font-family: 'Noto Sans JP', sans-serif; background-color: var(--bg);
+            color: var(--text); margin: 0; padding: 0; transition: 0.3s;
+            display: flex; justify-content: center; overflow-x: hidden;
+        }
+        .app-shell { width: 100%; max-width: 500px; min-height: 100vh; position: relative; padding-bottom: 250px; }
+
+        header {
+            padding: 20px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; background: var(--bg); z-index: 1000;
+        }
+        .brand-wrap { display: flex; align-items: center; gap: 8px; }
+        .brand-logo { color: var(--primary); font-size: 28px; }
+        .brand-name { font-family: 'Outfit', sans-serif; font-size: 24px; font-weight: 800; color: var(--primary); }
+        .header-controls { display: flex; align-items: center; gap: 10px; }
+        
+        .header-btn {
+            width: 44px; height: 44px; border-radius: 14px; border: none;
+            background: var(--card); color: var(--text); cursor: pointer;
+            box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center;
+            transition: 0.3s; box-sizing: border-box;
+        }
+        .header-btn.login-active { 
+            border: 3px solid var(--primary); 
+            color: var(--primary); 
+            background: rgba(26, 115, 232, 0.1);
+        }
+
+        .bottom-nav-container {
+            position: fixed; bottom: 20px; left: 0; width: 100%;
+            display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 2000; pointer-events: none;
+        }
+        .bottom-nav {
+            width: 90%; max-width: 400px; background: var(--nav-bg);
+            display: flex; justify-content: space-around; padding: 12px 5px;
+            border-radius: 28px; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            pointer-events: auto;
+        }
+        .nav-item {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            color: var(--tab-inactive); cursor: pointer; flex: 1; transition: 0.2s;
+        }
+        .nav-item.active { color: var(--tab-active); }
+        .nav-item i { font-size: 24px; }
+        .nav-item span { font-size: 10px; font-weight: 700; }
+
+        .sync-btn-wrap { width: 100%; display: flex; justify-content: center; pointer-events: auto; }
+        .sync-btn {
+            width: 85%; max-width: 360px; padding: 16px; border-radius: 50px; border: none;
+            background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+            color: white; font-size: 16px; font-weight: 800; cursor: pointer;
+            box-shadow: 0 8px 20px rgba(79, 172, 254, 0.4); display: none;
+        }
+        .sync-btn.visible { display: block; animation: fadeInUp 0.3s ease; }
+
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .page { display: none; padding: 0 15px; }
+        .page.active { display: block; }
+        .glass-card { background: var(--card); border-radius: 28px; padding: 20px; margin-bottom: 20px; box-shadow: var(--shadow); }
+        
+        textarea {
+            width: 100%; height: 150px; border: 1px solid rgba(0,0,0,0.1); outline: none;
+            background: var(--input-bg); border-radius: 18px; padding: 15px; color: var(--text);
+            font-size: 14px; box-sizing: border-box; resize: none; margin-bottom: 15px;
+        }
+        
+        .preview-label { font-size: 13px; font-weight: 700; margin-bottom: 12px; display: block; opacity: 0.7; }
+        
+        .event-tile {
+            background: var(--input-bg); border-radius: 16px; padding: 12px;
+            margin-bottom: 10px; display: flex; align-items: center; gap: 12px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative; overflow: hidden;
+        }
+        .event-tile.removing {
+            transform: translateX(100%); opacity: 0; margin-top: -50px;
+        }
+        
+        .tile-time { background: var(--primary); color: white; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; min-width: 45px; text-align: center; }
+        .tile-title { flex: 1; font-size: 13px; font-weight: 600; }
+
+        .manage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .date-input { background: var(--input-bg); border: none; padding: 10px; border-radius: 12px; color: var(--text); font-weight: 700; font-size: 14px; outline: none; }
+        
+        .manual-input { 
+            width: 100%; padding: 14px; border-radius: 12px; border: none; 
+            background: var(--input-bg); color: var(--text); box-sizing: border-box; 
+            font-size: 16px; margin-bottom: 12px; 
+        }
+
+        #toast { position: fixed; top: 40px; left: 50%; transform: translateX(-50%); background: #202124; color: white; padding: 12px 24px; border-radius: 50px; font-size: 14px; z-index: 3000; display: none; }
+    </style>
+</head>
+<body id="body">
+
+<div id="toast"></div>
+
+<div class="app-shell">
+    <header>
+        <div class="brand-wrap">
+            <i class="material-icons-round brand-logo">auto_awesome</i>
+            <span class="brand-name">Chronos Sync</span>
+        </div>
+        <div class="header-controls">
+            <button class="header-btn" onclick="toggleDarkMode()"><i class="material-icons-round" id="themeIcon">dark_mode</i></button>
+            <button class="header-btn" id="loginBtn" onclick="handleAuthClick()"><i class="material-icons-round">account_circle</i></button>
+        </div>
+    </header>
+
+    <div id="page-home" class="page active">
+        <div class="glass-card">
+            <span class="preview-label">JSONを貼り付け（自動解析）</span>
+            <textarea id="jsonInput" placeholder="ここに貼り付け..." oninput="renderPreview()"></textarea>
+            <span class="preview-label">プレビュー</span>
+            <div id="previewList"></div>
+        </div>
+    </div>
+
+    <div id="page-history" class="page">
+        <div class="glass-card">
+            <div class="manage-header">
+                <input type="date" id="targetDate" class="date-input" onchange="fetchCalendar()">
+                <div style="color:var(--danger); font-size:12px; font-weight:800; cursor:pointer;" onclick="bulkDelete()">一括削除</div>
+            </div>
+            <div id="calendarList"></div>
+        </div>
+    </div>
+
+    <div id="page-manual" class="page">
+        <div class="glass-card">
+            <span class="preview-label">予定を個別に追加</span>
+            <div style="display:flex; flex-direction:column;">
+                <input type="date" id="mDate" class="manual-input">
+                <input type="text" id="mTitle" placeholder="予定のタイトル" class="manual-input">
+                <div style="display:flex; gap:10px; margin-bottom: 15px;">
+                    <div style="flex:1;">
+                        <span style="font-size:10px; margin-left:5px;">開始</span>
+                        <input type="time" id="mStart" value="09:00" required class="manual-input">
+                    </div>
+                    <div style="flex:1;">
+                        <span style="font-size:10px; margin-left:5px;">終了</span>
+                        <input type="time" id="mEnd" value="10:00" required class="manual-input">
+                    </div>
+                </div>
+                <button class="sync-btn visible" style="display:block; position:relative; width:100%; margin-top:10px;" onclick="addManual()">カレンダーに追加</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-nav-container">
+        <div class="sync-btn-wrap">
+            <button id="syncBtn" class="sync-btn visible" onclick="startSync()">Synchronize Now</button>
+        </div>
+        <nav class="bottom-nav">
+            <div class="nav-item" onclick="showPage('history', this)">
+                <i class="material-icons-round">calendar_month</i>
+                <span>履歴</span>
+            </div>
+            <div class="nav-item active" onclick="showPage('home', this)">
+                <i class="material-icons-round">home</i>
+                <span>ホーム</span>
+            </div>
+            <div class="nav-item" onclick="showPage('manual', this)">
+                <i class="material-icons-round">add_task</i>
+                <span>個別追加</span>
+            </div>
+        </nav>
+    </div>
+</div>
+
+<script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+<script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+
+<script>
+    const CLIENT_ID = '744715743775-ftsa9e32pl6ia39oeq8g8h32823dlpah.apps.googleusercontent.com';
+    const SCOPES = 'https://www.googleapis.com/auth/calendar.events';
+    let tokenClient;
+    let accessToken = localStorage.getItem('google_access_token');
+    const NOTIFICATION_MINUTES = 10;
+
+    // --- 1. テーマの初期化と保存 ---
+    function initTheme() {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.getElementById('body').classList.add('dark-mode');
+            document.getElementById('themeIcon').innerText = 'light_mode';
+        }
+    }
+    initTheme();
+
+    function toggleDarkMode() {
+        const body = document.getElementById('body');
+        const icon = document.getElementById('themeIcon');
+        body.classList.toggle('dark-mode');
+        
+        if (body.classList.contains('dark-mode')) {
+            localStorage.setItem('theme', 'dark');
+            icon.innerText = 'light_mode';
+        } else {
+            localStorage.setItem('theme', 'light');
+            icon.innerText = 'dark_mode';
+        }
+    }
+
+    function resetAllDates() {
+        const d = new Date();
+        const s = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+        document.getElementById('targetDate').value = s;
+        document.getElementById('mDate').value = s;
+    }
+    resetAllDates();
+
+    function showPage(pageId, el) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('page-' + pageId).classList.add('active');
+        el.classList.add('active');
+        document.getElementById('syncBtn').style.display = (pageId === 'home') ? 'block' : 'none';
+        if(pageId === 'history') fetchCalendar();
+        window.scrollTo(0, 0);
+    }
+
+    function parseAnyJSON(input) {
+        try {
+            const data = JSON.parse(input);
+            let raw = Array.isArray(data) ? data : (data.schedule || data.events || data.items || data.activities || (data.data && Array.isArray(data.data) ? data.data : [data]));
+            let date = data.date || data.day || document.getElementById('targetDate').value;
+            return raw.map(i => ({
+                title: i.title || i.activity || i.summary || i.task || i.name || "予定",
+                start: i.start || i.time || i.startTime || "09:00",
+                end: i.end || i.endTime || "",
+                detail: i.details || i.description || i.memo || "",
+                date: i.date || i.day || date
+            })).filter(ev => ev.title !== "予定" || ev.start !== "09:00");
+        } catch (e) { return null; }
+    }
+
+    function renderPreview() {
+        const items = parseAnyJSON(document.getElementById('jsonInput').value);
+        const list = document.getElementById('previewList');
+        if(!items || items.length === 0) { list.innerHTML = '<p style="text-align:center; opacity:0.5;">有効な形式ではありません</p>'; return; }
+        list.innerHTML = items.map(ev => `<div class="event-tile"><div class="tile-time">${ev.start}</div><div class="tile-title">${ev.title}</div></div>`).join('');
+    }
+
+    async function startSync() {
+        if(!accessToken) { handleAuthClick(); return; }
+        const items = parseAnyJSON(document.getElementById('jsonInput').value);
+        if(!items || items.length === 0) { showToast("有効なデータがありません"); return; }
+        showToast("カレンダーに同期中...");
+        try {
+            for (const ev of items) {
+                const startDT = `${ev.date}T${ev.start}:00+09:00`;
+                const endDT = ev.end ? `${ev.date}T${ev.end}:00+09:00` : new Date(new Date(startDT).getTime() + 3600000).toISOString();
+                await gapi.client.calendar.events.insert({
+                    'calendarId': 'primary',
+                    'resource': { 
+                        'summary': ev.title, 'description': ev.detail,
+                        'start': { 'dateTime': startDT, 'timeZone': 'Asia/Tokyo' }, 
+                        'end': { 'dateTime': endDT, 'timeZone': 'Asia/Tokyo' },
+                        'reminders': { 'useDefault': false, 'overrides': [{'method': 'popup', 'minutes': NOTIFICATION_MINUTES}] }
+                    }
+                });
+            }
+            showToast("同期完了！");
+            document.getElementById('jsonInput').value = '';
+            renderPreview();
+        } catch (e) { showToast("エラーが発生しました"); }
+    }
+
+    async function addManual() {
+        if(!accessToken) { handleAuthClick(); return; }
+        const title = document.getElementById('mTitle').value;
+        const date = document.getElementById('mDate').value;
+        if(!title || !date) { showToast("情報を入力してください"); return; }
+        const startDT = `${date}T${document.getElementById('mStart').value}:00+09:00`;
+        const endDT = `${date}T${document.getElementById('mEnd').value}:00+09:00`;
+        try {
+            await gapi.client.calendar.events.insert({
+                'calendarId': 'primary',
+                'resource': { 
+                    'summary': title, 'start': { 'dateTime': startDT, 'timeZone': 'Asia/Tokyo' }, 'end': { 'dateTime': endDT, 'timeZone': 'Asia/Tokyo' },
+                    'reminders': { 'useDefault': false, 'overrides': [{'method': 'popup', 'minutes': NOTIFICATION_MINUTES}] }
+                }
+            });
+            showToast("追加しました！");
+            document.getElementById('mTitle').value = '';
+            fetchCalendar();
+        } catch (e) { showToast("エラーが発生しました"); }
+    }
+
+    async function fetchCalendar() {
+        if(!accessToken) return;
+        const dateStr = document.getElementById('targetDate').value;
+        const list = document.getElementById('calendarList');
+        try {
+            const resp = await gapi.client.calendar.events.list({
+                'calendarId': 'primary', 'timeMin': `${dateStr}T00:00:00+09:00`, 'timeMax': `${dateStr}T23:59:59+09:00`,
+                'singleEvents': true, 'orderBy': 'startTime'
+            });
+            const events = resp.result.items || [];
+            list.innerHTML = events.map(ev => {
+                const dt = new Date(ev.start.dateTime || ev.start.date);
+                const time = ev.start.dateTime ? `${dt.getHours()}:${String(dt.getMinutes()).padStart(2, '0')}` : "終日";
+                return `<div class="event-tile" id="ev-${ev.id}">
+                    <div class="tile-time">${time}</div>
+                    <div class="tile-title">${ev.summary}</div>
+                    <i class="material-icons-round" style="color:var(--danger); font-size:18px; cursor:pointer;" onclick="deleteEv('${ev.id}')">delete_outline</i>
+                </div>`;
+            }).join('') || '<p style="text-align:center; opacity:0.5; font-size:12px;">予定がありません</p>';
+        } catch (e) { console.log(e); }
+    }
+
+    async function deleteEv(id) {
+        if(!confirm("削除しますか？")) return;
+        const target = document.getElementById('ev-' + id);
+        if(target) target.classList.add('removing');
+        setTimeout(async () => {
+            try {
+                await gapi.client.calendar.events.delete({ 'calendarId': 'primary', 'eventId': id });
+                fetchCalendar();
+            } catch (e) { 
+                showToast("削除に失敗しました");
+                if(target) target.classList.remove('removing');
+            }
+        }, 400);
+    }
+
+    async function bulkDelete() {
+        const date = document.getElementById('targetDate').value;
+        if(!confirm("この日の予定をすべて削除しますか？")) return;
+        showToast("一括削除中...");
+        const resp = await gapi.client.calendar.events.list({ 'calendarId': 'primary', 'timeMin': `${date}T00:00:00+09:00`, 'timeMax': `${date}T23:59:59+09:00`, 'singleEvents': true });
+        for (const ev of resp.result.items) {
+            await gapi.client.calendar.events.delete({ 'calendarId': 'primary', 'eventId': ev.id });
+        }
+        fetchCalendar();
+        showToast("削除完了");
+    }
+
+    function updateLoginUI() {
+        const btn = document.getElementById('loginBtn');
+        if (accessToken) btn.classList.add('login-active');
+        else btn.classList.remove('login-active');
+    }
+
+    function gapiLoaded() { 
+        gapi.load('client', () => { 
+            gapi.client.init({}).then(() => { 
+                gapi.client.load('calendar', 'v3'); 
+                if(accessToken) {
+                    gapi.client.setToken({access_token: accessToken});
+                    updateLoginUI();
+                    fetchCalendar();
+                }
+            }); 
+        }); 
+    }
+
+    function gisLoaded() { 
+        tokenClient = google.accounts.oauth2.initTokenClient({ 
+            client_id: CLIENT_ID, 
+            scope: SCOPES, 
+            callback: (resp) => { 
+                accessToken = resp.access_token; 
+                localStorage.setItem('google_access_token', accessToken); 
+                gapi.client.setToken({access_token: accessToken});
+                updateLoginUI();
+                fetchCalendar(); 
+            } 
+        });
+        // --- 2. 起動時のオートログインチェック ---
+        if (accessToken) {
+            // トークンの有効性をチェックするために、サイレントにリクエストを試みる
+            // 有効期限が切れている場合は、次回の操作時に再認証が走る設計です
+            updateLoginUI();
+        }
+    }
+
+    function handleAuthClick() { 
+        tokenClient.requestAccessToken({ prompt: 'select_account' }); 
+    }
+
+    function showToast(m) { 
+        const t = document.getElementById('toast'); 
+        t.innerText = m; t.style.display = 'block'; 
+        setTimeout(()=>t.style.display='none', 2500); 
+    }
+</script>
+</body>
+</html>
