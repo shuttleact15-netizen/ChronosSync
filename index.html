@@ -216,7 +216,7 @@
     const provider = new GoogleAuthProvider();
     provider.addScope(SCOPES);
 
-    let accessToken = null;
+    let gapiInited = false;
 
     // --- 1. テーマの初期化 ---
     window.initTheme = function() {
@@ -259,13 +259,12 @@
         window.scrollTo(0, 0);
     }
 
-    // --- 2. ログイン状態の監視 (Firebaseの真骨頂) ---
+    // --- 2. ログイン状態の監視 ---
     onAuthStateChanged(auth, async (user) => {
         const btn = document.getElementById('loginBtn');
         if (user) {
             console.log("Firebase: ログイン状態を維持しています");
             btn.classList.add('login-active');
-            // GAPIを初期化してカレンダーを表示
             initGapi();
         } else {
             console.log("Firebase: 未ログイン");
@@ -275,10 +274,13 @@
 
     window.handleAuthClick = function() {
         signInWithPopup(auth, provider).then((result) => {
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            gapi.client.setToken({ access_token: credential.accessToken });
             showToast("ログイン成功");
+            fetchCalendar();
         }).catch((error) => {
             console.error(error);
-            showToast("ログインに失敗しました");
+            showToast("ログイン失敗");
         });
     }
 
@@ -288,19 +290,13 @@
             await gapi.client.init({
                 clientId: CLIENT_ID,
                 discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"],
+                scope: SCOPES
             });
+            gapiInited = true;
             
-            // Firebaseからアクセストークンを再取得してGAPIにセット
-            const user = auth.currentUser;
-            if (user) {
-                const credential = GoogleAuthProvider.credentialFromResult(await auth.getRedirectResult() || {});
-                // Popupの場合はresultから、自動ログインの場合は再取得が必要な場合がある
-                // ここでは一番確実な方法として、必要時に再度トークンをリクエストする設計にします
-                // ただし、簡易化のためFirebaseのログイン後にそのままAPIを叩けるように設定します
-                const idToken = await user.getIdToken();
-                // ※実際にはGoogle API用のAccessTokenが必要なため、signInWithPopup時の結果を使います
-                // 以下のfetchCalendar等の関数内でaccessTokenが空なら再取得するロジックを組みます
-            }
+            // FirebaseからGAPI用のトークンを橋渡し
+            // signInWithPopup以外の場合（リロード時など）は、再認証が必要な場合があるため
+            // ログイン済みであれば、再ログインを促すか、自動取得を試みる
             fetchCalendar();
         });
     }
@@ -331,7 +327,7 @@
         if(!auth.currentUser) { handleAuthClick(); return; }
         const items = parseAnyJSON(document.getElementById('jsonInput').value);
         if(!items || items.length === 0) { showToast("有効なデータがありません"); return; }
-        showToast("カレンダーに同期中...");
+        showToast("同期中...");
         try {
             for (const ev of items) {
                 const startDT = `${ev.date}T${ev.start}:00+09:00`;
@@ -349,6 +345,7 @@
             showToast("同期完了！");
             document.getElementById('jsonInput').value = '';
             renderPreview();
+            fetchCalendar();
         } catch (e) { handleGapiError(e); }
     }
 
@@ -374,7 +371,7 @@
     }
 
     window.fetchCalendar = async function() {
-        if(!auth.currentUser || !gapi.client.calendar) return;
+        if(!auth.currentUser || !gapi.client || !gapi.client.calendar) return;
         const dateStr = document.getElementById('targetDate').value;
         const list = document.getElementById('calendarList');
         try {
@@ -392,7 +389,13 @@
                     <i class="material-icons-round" style="color:var(--danger); font-size:18px; cursor:pointer;" onclick="deleteEv('${ev.id}')">delete_outline</i>
                 </div>`;
             }).join('') || '<p style="text-align:center; opacity:0.5; font-size:12px;">予定がありません</p>';
-        } catch (e) { handleGapiError(e); }
+        } catch (e) { 
+            // 401エラー（トークン切れ）の場合は再ログイン
+            if(e.status === 401) {
+                console.log("Token expired, re-authenticating...");
+                handleAuthClick();
+            }
+        }
     }
 
     window.deleteEv = async function(id) {
@@ -425,9 +428,8 @@
     }
 
     function handleGapiError(e) {
-        console.log(e);
+        console.error(e);
         if (e.status === 401) {
-            // トークン切れの場合は再ログインを促す
             handleAuthClick();
         } else {
             showToast("エラーが発生しました");
@@ -442,4 +444,5 @@
 </script>
 </body>
 </html>
+
 
