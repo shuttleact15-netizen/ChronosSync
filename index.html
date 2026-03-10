@@ -196,7 +196,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-    // --- Firebase設定 ---
+    // --- 設定 (API KeyをGAPI用にも使用) ---
     const firebaseConfig = {
         apiKey: "AIzaSyDQYr8hKJYME6ZYY82dgbTjBAQgKVNpe_E",
         authDomain: "chronossync-f3315.firebaseapp.com",
@@ -206,50 +206,27 @@
         appId: "1:286798380152:web:1cfde2188e6c5df2e1418d"
     };
 
+    const API_KEY = firebaseConfig.apiKey;
     const CLIENT_ID = '521516239634-b45gnhtgaevtrio87si461chmi54gnrt.apps.googleusercontent.com';
     const SCOPES = 'https://www.googleapis.com/auth/calendar.events';
     const NOTIFICATION_MINUTES = 10;
 
-    // Firebase初期化
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const provider = new GoogleAuthProvider();
     provider.addScope(SCOPES);
 
-    let gapiInited = false;
-
-    // --- 1. テーマの初期化 ---
-    window.initTheme = function() {
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark') {
-            document.getElementById('body').classList.add('dark-mode');
-            document.getElementById('themeIcon').innerText = 'light_mode';
-        }
-    }
-    initTheme();
-
-    window.toggleDarkMode = function() {
+    // --- テーマ管理 ---
+    window.toggleDarkMode = () => {
         const body = document.getElementById('body');
-        const icon = document.getElementById('themeIcon');
         body.classList.toggle('dark-mode');
-        if (body.classList.contains('dark-mode')) {
-            localStorage.setItem('theme', 'dark');
-            icon.innerText = 'light_mode';
-        } else {
-            localStorage.setItem('theme', 'light');
-            icon.innerText = 'dark_mode';
-        }
-    }
+        const isDark = body.classList.contains('dark-mode');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        document.getElementById('themeIcon').innerText = isDark ? 'light_mode' : 'dark_mode';
+    };
 
-    window.resetAllDates = function() {
-        const d = new Date();
-        const s = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-        document.getElementById('targetDate').value = s;
-        document.getElementById('mDate').value = s;
-    }
-    resetAllDates();
-
-    window.showPage = function(pageId, el) {
+    // --- ページ切り替え ---
+    window.showPage = (pageId, el) => {
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         document.getElementById('page-' + pageId).classList.add('active');
@@ -257,121 +234,51 @@
         document.getElementById('syncBtn').style.display = (pageId === 'home') ? 'block' : 'none';
         if(pageId === 'history') fetchCalendar();
         window.scrollTo(0, 0);
-    }
+    };
 
-    // --- 2. ログイン状態の監視 ---
-    onAuthStateChanged(auth, async (user) => {
+    // --- Firebase Auth 監視 ---
+    onAuthStateChanged(auth, (user) => {
         const btn = document.getElementById('loginBtn');
         if (user) {
-            console.log("Firebase: ログイン状態を維持しています");
             btn.classList.add('login-active');
             initGapi();
         } else {
-            console.log("Firebase: 未ログイン");
             btn.classList.remove('login-active');
         }
     });
 
-    window.handleAuthClick = function() {
+    window.handleAuthClick = () => {
         signInWithPopup(auth, provider).then((result) => {
             const credential = GoogleAuthProvider.credentialFromResult(result);
             gapi.client.setToken({ access_token: credential.accessToken });
             showToast("ログイン成功");
             fetchCalendar();
-        }).catch((error) => {
-            console.error(error);
+        }).catch(err => {
+            console.error(err);
             showToast("ログイン失敗");
         });
-    }
+    };
 
-    // --- 3. Google Calendar API 連携 ---
+    // --- Google API 初期化 (API Keyを追加) ---
     function initGapi() {
         gapi.load('client', async () => {
-            await gapi.client.init({
-                clientId: CLIENT_ID,
-                discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"],
-                scope: SCOPES
-            });
-            gapiInited = true;
-            
-            // FirebaseからGAPI用のトークンを橋渡し
-            // signInWithPopup以外の場合（リロード時など）は、再認証が必要な場合があるため
-            // ログイン済みであれば、再ログインを促すか、自動取得を試みる
-            fetchCalendar();
+            try {
+                await gapi.client.init({
+                    apiKey: API_KEY,
+                    clientId: CLIENT_ID,
+                    discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"],
+                    scope: SCOPES,
+                });
+                fetchCalendar();
+            } catch (err) {
+                console.error("GAPI Init Error:", err);
+            }
         });
     }
 
-    window.parseAnyJSON = function(input) {
-        try {
-            const data = JSON.parse(input);
-            let raw = Array.isArray(data) ? data : (data.schedule || data.events || data.items || data.activities || (data.data && Array.isArray(data.data) ? data.data : [data]));
-            let date = data.date || data.day || document.getElementById('targetDate').value;
-            return raw.map(i => ({
-                title: i.title || i.activity || i.summary || i.task || i.name || "予定",
-                start: i.start || i.time || i.startTime || "09:00",
-                end: i.end || i.endTime || "",
-                detail: i.details || i.description || i.memo || "",
-                date: i.date || i.day || date
-            })).filter(ev => ev.title !== "予定" || ev.start !== "09:00");
-        } catch (e) { return null; }
-    }
-
-    window.renderPreview = function() {
-        const items = parseAnyJSON(document.getElementById('jsonInput').value);
-        const list = document.getElementById('previewList');
-        if(!items || items.length === 0) { list.innerHTML = '<p style="text-align:center; opacity:0.5;">有効な形式ではありません</p>'; return; }
-        list.innerHTML = items.map(ev => `<div class="event-tile"><div class="tile-time">${ev.start}</div><div class="tile-title">${ev.title}</div></div>`).join('');
-    }
-
-    window.startSync = async function() {
-        if(!auth.currentUser) { handleAuthClick(); return; }
-        const items = parseAnyJSON(document.getElementById('jsonInput').value);
-        if(!items || items.length === 0) { showToast("有効なデータがありません"); return; }
-        showToast("同期中...");
-        try {
-            for (const ev of items) {
-                const startDT = `${ev.date}T${ev.start}:00+09:00`;
-                const endDT = ev.end ? `${ev.date}T${ev.end}:00+09:00` : new Date(new Date(startDT).getTime() + 3600000).toISOString();
-                await gapi.client.calendar.events.insert({
-                    'calendarId': 'primary',
-                    'resource': { 
-                        'summary': ev.title, 'description': ev.detail,
-                        'start': { 'dateTime': startDT, 'timeZone': 'Asia/Tokyo' }, 
-                        'end': { 'dateTime': endDT, 'timeZone': 'Asia/Tokyo' },
-                        'reminders': { 'useDefault': false, 'overrides': [{'method': 'popup', 'minutes': NOTIFICATION_MINUTES}] }
-                    }
-                });
-            }
-            showToast("同期完了！");
-            document.getElementById('jsonInput').value = '';
-            renderPreview();
-            fetchCalendar();
-        } catch (e) { handleGapiError(e); }
-    }
-
-    window.addManual = async function() {
-        if(!auth.currentUser) { handleAuthClick(); return; }
-        const title = document.getElementById('mTitle').value;
-        const date = document.getElementById('mDate').value;
-        if(!title || !date) { showToast("情報を入力してください"); return; }
-        const startDT = `${date}T${document.getElementById('mStart').value}:00+09:00`;
-        const endDT = `${date}T${document.getElementById('mEnd').value}:00+09:00`;
-        try {
-            await gapi.client.calendar.events.insert({
-                'calendarId': 'primary',
-                'resource': { 
-                    'summary': title, 'start': { 'dateTime': startDT, 'timeZone': 'Asia/Tokyo' }, 'end': { 'dateTime': endDT, 'timeZone': 'Asia/Tokyo' },
-                    'reminders': { 'useDefault': false, 'overrides': [{'method': 'popup', 'minutes': NOTIFICATION_MINUTES}] }
-                }
-            });
-            showToast("追加しました！");
-            document.getElementById('mTitle').value = '';
-            fetchCalendar();
-        } catch (e) { handleGapiError(e); }
-    }
-
-    window.fetchCalendar = async function() {
-        if(!auth.currentUser || !gapi.client || !gapi.client.calendar) return;
+    // --- カレンダー操作 ---
+    window.fetchCalendar = async () => {
+        if (!auth.currentUser || !gapi.client || !gapi.client.calendar) return;
         const dateStr = document.getElementById('targetDate').value;
         const list = document.getElementById('calendarList');
         try {
@@ -389,60 +296,124 @@
                     <i class="material-icons-round" style="color:var(--danger); font-size:18px; cursor:pointer;" onclick="deleteEv('${ev.id}')">delete_outline</i>
                 </div>`;
             }).join('') || '<p style="text-align:center; opacity:0.5; font-size:12px;">予定がありません</p>';
-        } catch (e) { 
-            // 401エラー（トークン切れ）の場合は再ログイン
-            if(e.status === 401) {
-                console.log("Token expired, re-authenticating...");
-                handleAuthClick();
-            }
+        } catch (e) {
+            if (e.status === 401) handleAuthClick();
         }
-    }
+    };
 
-    window.deleteEv = async function(id) {
-        if(!confirm("削除しますか？")) return;
+    window.startSync = async () => {
+        if (!auth.currentUser) return handleAuthClick();
+        const input = document.getElementById('jsonInput').value;
+        const items = parseAnyJSON(input);
+        if (!items) return showToast("有効なデータがありません");
+
+        showToast("同期中...");
+        try {
+            for (const ev of items) {
+                const startDT = `${ev.date}T${ev.start}:00+09:00`;
+                const endDT = ev.end ? `${ev.date}T${ev.end}:00+09:00` : new Date(new Date(startDT).getTime() + 3600000).toISOString();
+                await gapi.client.calendar.events.insert({
+                    'calendarId': 'primary',
+                    'resource': {
+                        'summary': ev.title, 'description': ev.detail,
+                        'start': { 'dateTime': startDT, 'timeZone': 'Asia/Tokyo' },
+                        'end': { 'dateTime': endDT, 'timeZone': 'Asia/Tokyo' },
+                        'reminders': { 'useDefault': false, 'overrides': [{'method': 'popup', 'minutes': NOTIFICATION_MINUTES}] }
+                    }
+                });
+            }
+            showToast("同期完了！");
+            document.getElementById('jsonInput').value = '';
+            renderPreview();
+            fetchCalendar();
+        } catch (e) { showToast("同期エラー"); }
+    };
+
+    window.deleteEv = async (id) => {
+        if (!confirm("削除しますか？")) return;
         const target = document.getElementById('ev-' + id);
-        if(target) target.classList.add('removing');
+        if (target) target.classList.add('removing');
         setTimeout(async () => {
             try {
                 await gapi.client.calendar.events.delete({ 'calendarId': 'primary', 'eventId': id });
                 fetchCalendar();
-            } catch (e) { 
-                showToast("削除に失敗しました");
-                if(target) target.classList.remove('removing');
+            } catch (e) {
+                showToast("削除失敗");
+                if (target) target.classList.remove('removing');
             }
         }, 400);
-    }
+    };
 
-    window.bulkDelete = async function() {
+    window.addManual = async () => {
+        if (!auth.currentUser) return handleAuthClick();
+        const title = document.getElementById('mTitle').value;
+        const date = document.getElementById('mDate').value;
+        if (!title || !date) return showToast("入力を確認してください");
+        const startDT = `${date}T${document.getElementById('mStart').value}:00+09:00`;
+        const endDT = `${date}T${document.getElementById('mEnd').value}:00+09:00`;
+        try {
+            await gapi.client.calendar.events.insert({
+                'calendarId': 'primary',
+                'resource': {
+                    'summary': title, 'start': { 'dateTime': startDT, 'timeZone': 'Asia/Tokyo' }, 'end': { 'dateTime': endDT, 'timeZone': 'Asia/Tokyo' },
+                    'reminders': { 'useDefault': false, 'overrides': [{'method': 'popup', 'minutes': NOTIFICATION_MINUTES}] }
+                }
+            });
+            showToast("追加しました");
+            document.getElementById('mTitle').value = '';
+            fetchCalendar();
+        } catch (e) { showToast("エラーが発生しました"); }
+    };
+
+    window.bulkDelete = async () => {
         const date = document.getElementById('targetDate').value;
-        if(!confirm("この日の予定をすべて削除しますか？")) return;
-        showToast("一括削除中...");
+        if (!confirm("一括削除しますか？")) return;
+        showToast("削除中...");
         try {
             const resp = await gapi.client.calendar.events.list({ 'calendarId': 'primary', 'timeMin': `${date}T00:00:00+09:00`, 'timeMax': `${date}T23:59:59+09:00`, 'singleEvents': true });
             for (const ev of resp.result.items) {
                 await gapi.client.calendar.events.delete({ 'calendarId': 'primary', 'eventId': ev.id });
             }
             fetchCalendar();
-            showToast("削除完了");
-        } catch (e) { handleGapiError(e); }
+            showToast("完了");
+        } catch (e) { showToast("削除失敗"); }
+    };
+
+    // --- 補助関数 ---
+    function parseAnyJSON(input) {
+        try {
+            const data = JSON.parse(input);
+            let raw = Array.isArray(data) ? data : (data.schedule || data.events || [data]);
+            let date = data.date || document.getElementById('targetDate').value;
+            return raw.map(i => ({
+                title: i.title || i.activity || i.summary || "予定",
+                start: i.start || i.time || "09:00",
+                end: i.end || "",
+                date: i.date || date
+            }));
+        } catch (e) { return null; }
     }
 
-    function handleGapiError(e) {
-        console.error(e);
-        if (e.status === 401) {
-            handleAuthClick();
-        } else {
-            showToast("エラーが発生しました");
-        }
-    }
+    window.renderPreview = () => {
+        const items = parseAnyJSON(document.getElementById('jsonInput').value);
+        const list = document.getElementById('previewList');
+        if (!items) { list.innerHTML = ''; return; }
+        list.innerHTML = items.map(ev => `<div class="event-tile"><div class="tile-time">${ev.start}</div><div class="tile-title">${ev.title}</div></div>`).join('');
+    };
 
-    window.showToast = function(m) { 
-        const t = document.getElementById('toast'); 
-        t.innerText = m; t.style.display = 'block'; 
-        setTimeout(()=>t.style.display='none', 2500); 
-    }
+    window.showToast = (m) => {
+        const t = document.getElementById('toast');
+        t.innerText = m; t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 2500);
+    };
+
+    // --- 初期化処理 ---
+    const d = new Date();
+    const s = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    document.getElementById('targetDate').value = s;
+    document.getElementById('mDate').value = s;
+    if (localStorage.getItem('theme') === 'dark') document.getElementById('body').classList.add('dark-mode');
 </script>
 </body>
 </html>
-
 
